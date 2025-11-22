@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>misumuse P2P Co-Listen & Chat</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load PeerJS Library for P2P connections -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+    <style>
+        /* Custom styles for the responsive, clean UI */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117; /* Dark background */
+        }
+        .card {
+            background-color: #161b22; /* Slightly lighter dark card */
+            box-shadow: 0 10px 30px rgba(0, 255, 255, 0.1);
+        }
+        .control-button, .playlist-button {
+            transition: transform 0.1s ease-in-out, background-color 0.2s;
+        }
+        /* Custom track style for range inputs */
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #58a6ff;
+            cursor: pointer;
+            border-radius: 50%;
+            margin-top: -6px;
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            background: #30363d;
+            height: 4px;
+            border-radius: 2px;
+            width: 100%;
+        }
+        .track-item:hover {
+            background-color: #262c35;
+        }
+        /* Aspect ratio container for YouTube embed */
+        .video-container {
+            position: relative;
+            width: 100%;
+            padding-bottom: 56.25%; 
+            border-radius: 0.5rem; 
+            overflow: hidden;
+        }
+        .video-container iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        /* Scrollbar styling for chat and playlist */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #30363d;
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #161b22;
+        }
+    </style>
+</head>
+<body class="flex items-start justify-center min-h-screen p-4">
+
+    <!-- Main Container (Restructured to stack Player, P2P, and Playlist vertically) -->
+    <div class="w-full max-w-6xl grid grid-cols-1 gap-6">
+
+        <!-- 1. Music Player Card -->
+        <div class="w-full">
+            <div id="player-card" class="card p-6 md:p-10 w-full rounded-xl text-white">
+                
+                <!-- (insert logo) then drop a line and put Web Player -->
+                <div class="text-center mb-6">
+                    <div class="flex justify-center items-center">
+                        <!-- misumuse Logo SVG & Text -->
+                        <svg class="w-8 h-8 mr-2 text-cyan-400" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                            <!-- Stylized musical note / wave pattern -->
+                            <path d="M12 21a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 17V5m0 0h5c2.21 0 4 1.79 4 4s-1.79 4-4 4h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span class="text-3xl font-extrabold text-cyan-400">misumuse</span>
+                    </div>
+                    <p class="text-2xl md:text-3xl font-bold mt-1 text-cyan-400">Web Player</p>
+                </div>
+                
+                <!-- Authentication Status/Panel -->
+                <div id="auth-panel" class="mb-6 border-b border-gray-700 pb-4">
+                    <p id="auth-status" class="text-xs text-center mb-4 text-gray-500 truncate">Initializing...</p>
+                    
+                    <!-- Login/Registration Form (Conditional) -->
+                    <div id="auth-form-container" class="hidden p-4 border border-gray-700 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-3 text-center" id="auth-form-title">Login</h3>
+                        <input type="email" id="auth-email" placeholder="Email" class="w-full p-2 mb-2 rounded bg-gray-800 border border-gray-700 text-sm placeholder-gray-400 focus:ring-cyan-500 focus:border-cyan-500">
+                        <input type="password" id="auth-password" placeholder="Password" class="w-full p-2 mb-4 rounded bg-gray-800 border border-gray-700 text-sm placeholder-gray-400 focus:ring-cyan-500 focus:border-cyan-500">
+                        
+                        <div class="flex space-x-2 mb-3">
+                            <button onclick="loginUser()" id="login-btn" class="flex-1 p-2 rounded-lg bg-green-600 hover:bg-green-700 font-semibold">
+                                Login
+                            </button>
+                            <button onclick="registerUser()" id="register-btn" class="flex-1 p-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 font-semibold">
+                                Register
+                            </button>
+                        </div>
+                        <button onclick="toggleAuthFormMode()" id="auth-form-toggle" class="w-full text-xs text-gray-400 hover:text-cyan-400">
+                            Need an account? Switch to Register
+                        </button>
+                    </div>
+
+                    <!-- Logged In / Log Out (Conditional) -->
+                    <div id="logged-in-controls" class="hidden flex justify-between items-center p-3 rounded-lg bg-gray-700">
+                        <p class="text-sm truncate">
+                            Signed in as: <span id="user-email-display" class="font-semibold text-cyan-400"></span>
+                        </p>
+                        <!-- Logout Button (Grayed out and marked WIP) -->
+                        <button id="logout-btn-wip" class="p-2 ml-4 rounded-lg bg-gray-600 text-gray-400 cursor-not-allowed text-sm font-semibold flex-shrink-0" disabled>
+                            Logout (WIP)
+                        </button>
+                    </div>
+                </div>
+
+
+                <!-- Media Display Area -->
+                <div id="media-display-container" class="w-full mx-auto mb-6">
+                    
+                    <!-- YouTube Player Container (Initially Hidden) -->
+                    <div id="youtube-player-container" class="video-container hidden">
+                        <div id="youtube-player"></div>
+                    </div>
+
+                    <!-- Album Art Placeholder (Initially Visible) -->
+                    <div id="audio-display-container" class="w-full h-48 mx-auto bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden">
+                        <svg class="w-20 h-20 text-gray-400" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 21a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 17V5m0 0h5c2.21 0 4 1.79 4 4s-1.79 4-4 4h-5" />
+                        </svg>
+                    </div>
+
+                </div>
+
+                <!-- Track Information -->
+                <div class="text-center mb-6">
+                    <p id="track-title" class="text-xl font-semibold truncate">No song loaded</p>
+                    <p id="track-artist" class="text-sm text-gray-400">Load a song below</p>
+                </div>
+
+                <!-- Progress Bar and Time (Hidden for YouTube, visible for Audio) -->
+                <div id="audio-controls-container" class="mb-4">
+                    <input type="range" id="seek-bar" min="0" max="100" value="0" class="w-full h-2 cursor-pointer" disabled>
+                    <div class="flex justify-between text-xs text-gray-400 mt-1">
+                        <span id="current-time">0:00</span>
+                        <span id="duration">0:00</span>
+                    </div>
+                </div>
+                
+                <!-- Volume Control -->
+                <div class="flex items-center justify-center space-x-2 mb-8">
+                    <svg class="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M14 3.23v2.06c2.89.81 5 3.53 5 6.71s-2.11 5.9-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77zM16.5 12c0-2.22-1.2-4.14-3-5.19v10.38c1.8-1.05 3-2.97 3-5.19zM12 5L7 9H3v6h4l5 4V5z"/>
+                    </svg>
+                    <input type="range" id="volume-slider" min="0" max="100" value="70" class="h-2 cursor-pointer w-32">
+                </div>
+
+                <!-- Playback Controls (Main Row) -->
+                <div class="flex justify-center items-center space-x-3 sm:space-x-6 mb-8">
+                    <button onclick="skipTrack(-1)" class="control-button p-3 rounded-full bg-gray-700 hover:bg-gray-600 text-xl text-cyan-400">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
+                    </button>
+                    
+                    <button onclick="skip(-10)" id="seek-back-btn" class="control-button p-3 rounded-full bg-gray-700 hover:bg-gray-600 text-xl text-cyan-400 hidden sm:inline-block">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
+                    </button>
+
+                    <!-- Play/Pause Button -->
+                    <button onclick="playPause()" id="play-pause-btn" class="control-button p-4 rounded-full bg-cyan-600 hover:bg-cyan-700 text-2xl" disabled>
+                        <svg id="play-icon" class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3l14 9-14 9V3z"></path></svg>
+                        <svg id="pause-icon" class="w-8 h-8 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 4v16m4-16v16"></path></svg>
+                    </button>
+
+                    <button onclick="skip(10)" id="seek-forward-btn" class="control-button p-3 rounded-full bg-gray-700 hover:bg-gray-600 text-xl text-cyan-400 hidden sm:inline-block">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 19l7-7-7-7M5 19l7-7-7-7"></path></svg>
+                    </button>
+
+                    <button onclick="skipTrack(1)" class="control-button p-3 rounded-full bg-gray-700 hover:bg-gray-600 text-xl text-cyan-400">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 19l7-7-7-7M5 19l7-7-7-7"></path></svg>
+                    </button>
+                </div>
+
+                <!-- DEDICATED YOUTUBE ERROR DISPLAY -->
+                <div id="yt-error-display" class="hidden p-3 rounded-lg text-sm mb-4 bg-red-900 border border-red-700 text-red-100">
+                    <p class="font-bold mb-1">YouTube Playback Status:</p>
+                    <p id="yt-error-message"></p>
+                </div>
+
+                <!-- Message box for general success/failure -->
+                <div id="message-box" class="hidden p-3 rounded text-sm mb-4"></div>
+
+                <!-- Music Loading Section -->
+                <div class="space-y-4 pt-4 border-t border-gray-700">
+                    <h2 class="text-lg font-medium text-gray-300">
+                        Load Track 
+                        <!-- YouTube is now marked as BETA -->
+                        <span class="text-yellow-400 text-sm font-normal ml-2">(MP3 URL / YouTube <span class="text-red-400 font-bold">[BETA]</span> URL)</span>
+                    </h2>
+                    <input type="text" id="audio-url-input" placeholder="Paste MP3 or YouTube/YouTube Music/Shorts URL here." class="w-full p-3 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm placeholder-gray-400">
+                    <input type="text" id="artist-input" placeholder="Artist/Channel Name (optional)" class="w-full p-3 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm placeholder-gray-400">
+                    
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <button onclick="loadFromURL()" class="p-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 transition duration-150 font-semibold">
+                            Load & Play
+                        </button>
+                        <button onclick="addCurrentToPlaylist()" id="add-to-playlist-btn" class="p-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 transition duration-150 font-semibold" disabled>
+                            Save to Playlist
+                        </button>
+                        <button onclick="downloadCurrentTrack()" id="download-btn" class="p-3 rounded-lg bg-yellow-600 hover:bg-yellow-700 transition duration-150 font-semibold" disabled>
+                            Download Track
+                        </button>
+                    </div>
+                    <input type="file" id="local-file-input" accept="audio/*" class="w-full block text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-gray-700 file:text-white hover:file:bg-gray-600">
+                </div>
+            </div>
+        </div>
+        
+        <!-- 2. P2P Chat and Controls -->
+        <div class="w-full">
+            <div id="p2p-card" class="card p-6 w-full rounded-xl text-white">
+                <h2 class="text-2xl font-bold mb-4 text-center text-green-400">P2P Co-Listen & Chat</h2>
+                
+                <!-- Peer ID Section -->
+                <div class="bg-gray-700 p-3 rounded-lg mb-4">
+                    <p class="text-sm font-semibold text-gray-400 mb-1">Your Peer ID:</p>
+                    <div class="flex items-center space-x-2">
+                        <span id="my-peer-id" class="peer-id-display text-lg text-green-400 font-mono truncate">N/A</span>
+                        <button onclick="copyPeerId()" class="flex-shrink-0 p-1 text-green-400 hover:text-green-200 transition duration-150 rounded-full bg-gray-600" title="Copy ID">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v2"></path></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Connection Section -->
+                <div class="mb-4">
+                    <p class="text-sm font-semibold text-gray-400 mb-2">Remote Peer ID:</p>
+                    <div class="flex space-x-2">
+                        <input type="text" id="remote-peer-id" placeholder="Enter peer ID to connect" class="flex-1 p-2 rounded bg-gray-700 border border-gray-600 text-sm placeholder-gray-400 focus:ring-green-500 focus:border-green-500">
+                        <button onclick="connectToPeer()" id="connect-btn" class="p-2 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition duration-150" disabled>
+                            Connect
+                        </button>
+                    </div>
+                    <p id="connection-status" class="text-center text-sm mt-2 text-red-400">Status: Disconnected</p>
+                </div>
+                
+                <!-- Chat Window -->
+                <div class="space-y-3 pt-4 border-t border-gray-700">
+                    <h3 class="text-lg font-medium text-gray-300">P2P Chat</h3>
+                    <div id="messages" class="custom-scrollbar h-40 overflow-y-auto p-3 border border-gray-700 rounded-lg bg-gray-900 space-y-2">
+                        <p class="text-gray-500 text-xs italic">Connect to a peer to start chatting.</p>
+                    </div>
+                    <div class="flex space-x-2">
+                        <input type="text" id="message-input" placeholder="Send a message..." class="flex-1 p-2 rounded bg-gray-700 border border-gray-600 text-sm" disabled>
+                        <button onclick="sendMessage()" id="send-btn" class="p-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition duration-150" disabled>
+                            Send
+                        </button>
+                    </div>
+                    <p class="text-xs text-yellow-500 mt-2 text-center">Playback syncs automatically when connected.</p>
+                </div>
+                
+            </div>
+        </div>
+
+        <!-- 3. Playlist Manager (WIP label added, storage info removed) -->
+        <div class="w-full lg:mt-6">
+            <div class="card p-6 md:p-8 w-full rounded-xl text-white">
+                <h2 class="text-2xl font-bold mb-2 text-center text-indigo-400">
+                    My Private Playlist (WIP)
+                </h2>
+                
+                <!-- Import/Export Controls (Metadata Sharing) -->
+                <div class="flex space-x-2 mb-4">
+                    <button onclick="exportPlaylist()" class="playlist-button flex-1 p-3 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm font-semibold">
+                        Export .misu
+                    </button>
+                    <label for="import-file-input" class="playlist-button flex-1 text-center cursor-pointer p-3 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm font-semibold">
+                        Import .misu
+                    </label>
+                    <input type="file" id="import-file-input" accept=".misu, .txt" class="hidden">
+                </div>
+
+                <!-- Playlist List -->
+                <ul id="playlist-ul" class="custom-scrollbar space-y-2 max-h-96 overflow-y-auto pr-2">
+                    <li class="p-3 bg-gray-700 rounded text-sm text-gray-400">Playlist is loading...</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- The actual HTML5 Audio Element (hidden) -->
+    <audio id="music-player"></audio>
+    
+    <!-- YouTube Iframe Player API Script -->
+    <script async src="https://www.youtube.com/iframe_api"></script>
+
+    <script type="module">
+        // --- Firebase Imports ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, onSnapshot, addDoc, deleteDoc, doc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        setLogLevel('debug'); // Enable Firestore logging
+
+        // --- Global Firebase and App State ---
+        let app;
+        let db;
+        let auth;
+        let userId = 'default-user';
+        let isPermanentUser = false; 
+        let playlistData = []; 
+        let currentTrackInfo = null; 
+        let mediaType = 'AUDIO'; 
+        let isSeeking = false;
+        
+        // --- PeerJS State ---
+        let peer = null;
+        let connection = null;
+        const PEER_SERVER_HOST = '0.peerjs.com'; 
+        const PEER_SERVER_PORT = 443;
+        const PEER_SERVER_PATH = '/';
+        const PEER_SERVER_SECURE = true;
+        let isP2PListener = false; // Flag to prevent sync loop
+
+        // --- Global HTML Element References ---
+        const audio = document.getElementById('music-player');
+        const playPauseBtn = document.getElementById('play-pause-btn');
+        const playIcon = document.getElementById('play-icon');
+        const pauseIcon = document.getElementById('pause-icon');
+        const seekBar = document.getElementById('seek-bar');
+        const currentTimeEl = document.getElementById('current-time');
+        const durationEl = document.getElementById('duration');
+        const titleEl = document.getElementById('track-title');
+        const artistEl = document.getElementById('track-artist');
+        const urlInput = document.getElementById('audio-url-input');
+        const artistInput = document.getElementById('artist-input');
+        const fileInput = document.getElementById('local-file-input');
+        const volumeSlider = document.getElementById('volume-slider');
+        const messageBox = document.getElementById('message-box');
+        const playlistUl = document.getElementById('playlist-ul');
+        const addPlaylistBtn = document.getElementById('add-to-playlist-btn');
+        const importFileInput = document.getElementById('import-file-input');
+        const authStatusEl = document.getElementById('auth-status');
+        const audioDisplayContainer = document.getElementById('audio-display-container');
+        const youtubePlayerContainer = document.getElementById('youtube-player-container');
+        const audioControlsContainer = document.getElementById('audio-controls-container');
+        const authFormContainer = document.getElementById('auth-form-container');
+        const authFormTitle = document.getElementById('auth-form-title');
+        const authEmailInput = document.getElementById('auth-email');
+        const authPasswordInput = document.getElementById('auth-password');
+        const authFormToggle = document.getElementById('auth-form-toggle');
+        const loggedInControls = document.getElementById('logged-in-controls');
+        const userEmailDisplay = document.getElementById('user-email-display');
+        const downloadBtn = document.getElementById('download-btn');
+        const ytErrorDisplay = document.getElementById('yt-error-display');
+        const ytErrorMessage = document.getElementById('yt-error-message');
+        const logoutBtnWip = document.getElementById('logout-btn-wip'); // Reference to the WIP button
+
+        // P2P/Chat Elements
+        const myPeerIdEl = document.getElementById('my-peer-id');
+        const remotePeerIdInput = document.getElementById('remote-peer-id');
+        const connectBtn = document.getElementById('connect-btn');
+        const messagesEl = document.getElementById('messages');
+        const messageInput = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const connectionStatusEl = document.getElementById('connection-status');
+        
+        let isPlaying = false;
+        let audioLoaded = false;
+        let currentPlaylistIndex = -1; 
+        let isRegisterMode = false;
+        let youtubePlayer = null;
+        let youtubeInterval = null;
+
+        // --- Utility Functions ---
+
+        function displayMessage(text, isError = false) {
+            messageBox.textContent = text;
+            messageBox.classList.remove('hidden', 'bg-red-800', 'bg-green-800');
+            messageBox.classList.add(isError ? 'bg-red-800' : 'bg-green-800');
+            setTimeout(() => {
+                messageBox.classList.add('hidden');
+            }, 5000);
+        }
+
+        function formatTime(seconds) {
+            if (isNaN(seconds) || seconds < 0) return '0:00';
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = Math.floor(seconds % 60);
+            return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
+        }
+        
+        function getYouTubeVideoId(url) {
+            if (!url) return null;
+            let match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|\w*\/|embed\/|v\/|watch\?.*v=|shorts\/)|youtu\.be\/|music\.youtube\.com\/(?:watch\?.*v=|track\/))([^&?\/]*)/);
+            const videoId = match && match[1] ? match[1] : null;
+            return (videoId && videoId.length === 11) ? videoId : null;
+        }
+
+        function setPlayerType(type) {
+            ytErrorDisplay.classList.add('hidden');
+            
+            mediaType = type;
+            const isYT = type === 'YOUTUBE';
+            
+            audioDisplayContainer.classList.toggle('hidden', isYT);
+            youtubePlayerContainer.classList.toggle('hidden', !isYT);
+            audioControlsContainer.classList.toggle('hidden', isYT);
+
+            if (isYT) {
+                audio.pause();
+            } else {
+                if (youtubePlayer) {
+                    try { youtubePlayer.stopVideo(); } catch (e) { console.log("YT Player stop failed."); }
+                }
+            }
+        }
+        
+        // --- P2P PeerJS Logic ---
+
+        function initializePeer() {
+            peer = new Peer({
+                host: PEER_SERVER_HOST,
+                port: PEER_SERVER_PORT,
+                path: PEER_SERVER_PATH,
+                secure: PEER_SERVER_SECURE
+            });
+
+            peer.on('open', (id) => {
+                myPeerIdEl.textContent = id;
+                connectBtn.disabled = false;
+                displayP2PStatus('P2P Status: Ready to connect.', 'text-green-500');
+                console.log('My Peer ID is:', id);
+            });
+
+            // Handle incoming connection attempts
+            peer.on('connection', (conn) => {
+                console.log('Incoming connection detected:', conn.peer);
+                displayMessage(`Incoming connection from ${conn.peer}!`, false);
+                handleConnection(conn);
+            });
+
+            peer.on('error', (err) => {
+                console.error('PeerJS Error:', err);
+                displayP2PStatus('P2P Error: Failed to connect to server.', 'text-red-500');
+            });
+        }
+        
+        function displayP2PStatus(message, className) {
+            connectionStatusEl.textContent = message.replace('P2P Status: ', '');
+            connectionStatusEl.className = `text-center text-sm mt-2 ${className}`;
+        }
+
+        window.connectToPeer = function() {
+            const remoteId = remotePeerIdInput.value.trim();
+            if (!remoteId || remoteId === peer.id || !peer.id) {
+                displayMessage('Enter a valid remote Peer ID.', true);
+                return;
+            }
+            
+            displayP2PStatus(`Connecting to ${remoteId}...`, 'text-yellow-500');
+            const conn = peer.connect(remoteId);
+            handleConnection(conn);
+        }
+
+        function handleConnection(conn) {
+            if (connection && connection.open) {
+                connection.close(); // Close existing connection for this demo
+            }
+            connection = conn;
+
+            conn.on('open', () => {
+                displayP2PStatus(`Connected to: ${conn.peer}`, 'text-green-500');
+                messageInput.disabled = false;
+                sendBtn.disabled = false;
+                appendMessage('System', `Connection established with peer ${conn.peer}. Co-listening is active.`, 'text-gray-400');
+            });
+
+            conn.on('data', (data) => {
+                handleP2PData(data);
+            });
+
+            conn.on('close', () => {
+                displayP2PStatus('Disconnected', 'text-red-500');
+                messageInput.disabled = true;
+                sendBtn.disabled = true;
+                appendMessage('System', 'Connection closed.', 'text-red-400');
+            });
+
+            conn.on('error', (err) => {
+                console.error('Connection Error:', err);
+                displayP2PStatus('Connection Error', 'text-red-500');
+            });
+        }
+        
+        // --- P2P Data Handling (Chat & Sync) ---
+
+        function handleP2PData(data) {
+            // Check for message type
+            if (data.type === 'chat') {
+                appendMessage('Peer', data.message, 'bg-gray-700 self-start');
+            } else if (data.type === 'sync') {
+                isP2PListener = true; // Set flag to prevent sending a sync response back
+                applySyncState(data.state);
+                isP2PListener = false;
+            } else if (data.type === 'track') {
+                isP2PListener = true;
+                if (!currentTrackInfo || currentTrackInfo.url !== data.track.url) {
+                    loadAndPlayTrack(data.track, -1);
+                    appendMessage('System', `Peer started playing: ${data.track.title}`, 'text-cyan-400');
+                } else {
+                    // Track is the same, just apply sync state
+                    applySyncState(data.state);
+                }
+                isP2PListener = false;
+            }
+        }
+        
+        function sendP2PData(data) {
+            if (connection && connection.open && !isP2PListener) {
+                connection.send(data);
+            }
+        }
+
+        function sendSyncState(state, isTrackChange = false) {
+            if (!currentTrackInfo) return;
+            
+            const payload = {
+                type: isTrackChange ? 'track' : 'sync',
+                state: state,
+                track: isTrackChange ? currentTrackInfo : undefined
+            };
+            sendP2PData(payload);
+        }
+
+        function getCurrentPlayerState() {
+            if (mediaType === 'YOUTUBE' && youtubePlayer && typeof youtubePlayer.getPlayerState === 'function') {
+                return {
+                    isPlaying: youtubePlayer.getPlayerState() === YT.PlayerState.PLAYING,
+                    time: youtubePlayer.getCurrentTime(),
+                    mediaType: 'YOUTUBE'
+                };
+            } else if (mediaType === 'AUDIO' && audioLoaded) {
+                 return {
+                    isPlaying: !audio.paused,
+                    time: audio.currentTime,
+                    mediaType: 'AUDIO'
+                };
+            }
+            return null;
+        }
+
+        function applySyncState(state) {
+            if (!state) return;
+            
+            if (state.mediaType === 'YOUTUBE' && mediaType === 'YOUTUBE') {
+                if (youtubePlayer && typeof youtubePlayer.seekTo === 'function') {
+                    youtubePlayer.seekTo(state.time, true);
+                    if (state.isPlaying) { youtubePlayer.playVideo(); } else { youtubePlayer.pauseVideo(); }
+                }
+            } else if (state.mediaType === 'AUDIO' && mediaType === 'AUDIO') {
+                audio.currentTime = state.time;
+                if (state.isPlaying) { audio.play(); } else { audio.pause(); }
+            }
+            
+            // Update local player state UI to reflect sync change
+            if (state.isPlaying) {
+                isPlaying = true;
+                playIcon.classList.add('hidden');
+                pauseIcon.classList.remove('hidden');
+            } else {
+                isPlaying = false;
+                playIcon.classList.remove('hidden');
+                pauseIcon.classList.add('hidden');
+            }
+        }
+        
+        window.sendMessage = function() {
+            const message = messageInput.value.trim();
+            if (!message || !connection || !connection.open) return;
+
+            // 1. Send chat message
+            sendP2PData({ type: 'chat', message: message });
+
+            // 2. Display locally
+            appendMessage('Me', message, 'bg-green-700 self-end');
+
+            // 3. Clear input
+            messageInput.value = '';
+            messageInput.focus();
+        }
+        
+        function appendMessage(sender, content, className) {
+            const container = document.createElement('div');
+            container.className = `flex ${sender === 'Me' ? 'justify-end' : 'justify-start'} w-full`;
+            
+            const messageBox = document.createElement('p');
+            messageBox.className = `max-w-full p-2 rounded-lg text-xs md:text-sm ${className}`;
+            messageBox.innerHTML = `<strong>${sender}:</strong> ${content}`;
+            
+            container.appendChild(messageBox);
+            messagesEl.appendChild(container);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        // --- YouTube Player Logic (API Callback) ---
+        window.onYouTubeIframeAPIReady = function() {
+            console.log("YouTube API Ready.");
+        }
+        
+        function createYouTubePlayer(videoId) {
+             if (typeof YT === 'undefined' || typeof YT.Player === 'undefined') {
+                displayMessage("YouTube API not ready. Please wait or reload.", true);
+                return;
+            }
+            
+            const playerVarsConfig = {
+                'autoplay': 1,
+                'controls': 1,
+                'modestbranding': 1,
+                'rel': 0,
+                'origin': window.location.origin 
+            };
+            
+            if (youtubePlayer && typeof youtubePlayer.loadVideoById === 'function') {
+                youtubePlayer.loadVideoById({
+                    videoId: videoId,
+                    startSeconds: 0,
+                    playerVars: playerVarsConfig
+                });
+            } else {
+                youtubePlayer = new YT.Player('youtube-player', {
+                    videoId: videoId,
+                    playerVars: playerVarsConfig,
+                    events: {
+                        'onReady': (event) => {
+                            event.target.playVideo();
+                            event.target.setVolume(volumeSlider.value);
+                            startYouTubeInterval();
+                            sendSyncState(getCurrentPlayerState(), true); // Send track change sync
+                        },
+                        'onStateChange': onYouTubePlayerStateChange,
+                        'onError': onYouTubePlayerError 
+                    }
+                });
+            }
+        }
+        
+        function onYouTubePlayerError(event) {
+            const errorCode = event.data;
+            let errorMessage = `Error ${errorCode}: `;
+            
+            if (errorCode === 150 || errorCode === 101 || errorCode === 153) {
+                 errorMessage += "Embedding Restricted by Video Owner. Please try a different YouTube link or an MP3 URL.";
+                 playPauseBtn.disabled = true;
+            } else if (errorCode === 100) {
+                 errorMessage += "Video Not Found.";
+                 playPauseBtn.disabled = true;
+            } else {
+                 errorMessage += "Unknown playback error.";
+            }
+
+            ytErrorMessage.textContent = errorMessage;
+            ytErrorDisplay.classList.remove('hidden');
+            
+            displayMessage(`Playback failed. See YT Error Status.`, true);
+            
+            if (currentPlaylistIndex !== -1 && playlistData.length > 1) {
+                 setTimeout(() => skipTrack(1), 3000);
+            }
+        }
+
+        function onYouTubePlayerStateChange(event) {
+            const state = event.data;
+            if (state === YT.PlayerState.PLAYING) {
+                isPlaying = true;
+                playIcon.classList.add('hidden');
+                pauseIcon.classList.remove('hidden');
+            } else if (state === YT.PlayerState.PAUSED || state === YT.PlayerState.ENDED) {
+                isPlaying = false;
+                playIcon.classList.remove('hidden');
+                pauseIcon.classList.add('hidden');
+                if (state === YT.PlayerState.ENDED) {
+                    skipTrack(1); 
+                }
+            }
+            playPauseBtn.disabled = false;
+            sendSyncState(getCurrentPlayerState());
+        }
+
+        function startYouTubeInterval() {
+            if (youtubeInterval) clearInterval(youtubeInterval);
+            youtubeInterval = setInterval(() => {
+                if (mediaType === 'YOUTUBE' && youtubePlayer && typeof youtubePlayer.getCurrentTime === 'function' && youtubePlayer.getPlayerState() !== YT.PlayerState.ENDED) {
+                    const current = youtubePlayer.getCurrentTime();
+                    const duration = youtubePlayer.getDuration();
+                    currentTimeEl.textContent = formatTime(current);
+                    durationEl.textContent = formatTime(duration);
+                }
+            }, 1000);
+        }
+        
+        // --- HTML Audio Player Logic & Controls ---
+
+        function handleLoadError() {
+            titleEl.textContent = "Error Loading Song";
+            artistEl.textContent = "Check URL, file format, or server CORS settings.";
+            playPauseBtn.disabled = true;
+            addPlaylistBtn.disabled = true;
+            downloadBtn.disabled = true;
+            seekBar.disabled = true;
+            audioLoaded = false;
+            currentTrackInfo = null;
+            setPlayerType('AUDIO'); 
+            displayMessage("Could not load HTML audio source. Check the URL or file.", true);
+            
+            if (currentPlaylistIndex !== -1 && playlistData.length > 1) {
+                 setTimeout(() => skipTrack(1), 1000);
+            }
+        }
+        
+        function setupAudioPlayer() {
+            if (!isNaN(audio.duration) && audio.duration > 0) {
+                audioLoaded = true;
+                playPauseBtn.disabled = false;
+                seekBar.disabled = false;
+                durationEl.textContent = formatTime(audio.duration);
+                seekBar.max = audio.duration;
+                seekBar.value = 0;
+
+                // Enable/Disable Playlist & Download buttons
+                const canSave = isPermanentUser && currentTrackInfo && currentTrackInfo.url.startsWith('http');
+                addPlaylistBtn.disabled = !canSave;
+                downloadBtn.disabled = !currentTrackInfo || currentTrackInfo.url.startsWith('blob:') || !currentTrackInfo.url.startsWith('http');
+                
+                renderPlaylist();
+            } else {
+                handleLoadError();
+            }
+        }
+
+        function loadAndPlayTrack(track, index = -1, isSync = false) {
+            currentTrackInfo = track;
+            currentPlaylistIndex = index;
+            
+            titleEl.textContent = track.title;
+            artistEl.textContent = track.artist || "Unknown Artist";
+            playPauseBtn.disabled = false;
+            
+            // Enable/Disable Download button immediately
+            downloadBtn.disabled = !track || track.url.startsWith('blob:') || !track.url.startsWith('http');
+
+            const videoId = getYouTubeVideoId(track.url);
+            
+            if (videoId) {
+                setPlayerType('YOUTUBE');
+                currentTimeEl.textContent = '0:00';
+                durationEl.textContent = 'Loading...';
+                createYouTubePlayer(videoId);
+            } else {
+                setPlayerType('AUDIO');
+                audio.src = track.url;
+                audio.load();
+
+                audio.removeEventListener('error', handleLoadError);
+                
+                audio.addEventListener('loadedmetadata', () => {
+                    setupAudioPlayer();
+                    playPause(true); // Force play
+                    sendSyncState(getCurrentPlayerState(), true); // Send track change sync
+                }, { once: true });
+                
+                audio.addEventListener('error', handleLoadError);
+                displayMessage(`Loading track: ${track.title}`, false);
+            }
+            
+            renderPlaylist(); 
+        }
+
+        window.playPause = function(forcePlay = false) {
+            if (!currentTrackInfo) {
+                displayMessage("Please load a song first!", true);
+                return;
+            }
+            
+            if (mediaType === 'YOUTUBE' && youtubePlayer && typeof youtubePlayer.getPlayerState === 'function') {
+                const state = youtubePlayer.getPlayerState();
+                if (isPlaying && !forcePlay) {
+                    youtubePlayer.pauseVideo();
+                } else if (state === YT.PlayerState.PAUSED || state === YT.PlayerState.CUED || state === YT.PlayerState.ENDED || forcePlay) {
+                    youtubePlayer.playVideo();
+                }
+            } else if (mediaType === 'AUDIO' && audioLoaded) {
+                if (isPlaying && !forcePlay) {
+                    audio.pause();
+                } else {
+                    audio.play().catch(error => {
+                        displayMessage("Playback failed. User interaction is required to start playback.", true);
+                        console.error("Playback failed:", error);
+                    });
+                }
+            }
+            
+            // The onStateChange or timeupdate handler will trigger sendSyncState
+        }
+        
+        audio.addEventListener('play', () => {
+            isPlaying = true;
+            playIcon.classList.add('hidden');
+            pauseIcon.classList.remove('hidden');
+            sendSyncState(getCurrentPlayerState());
+        });
+
+        audio.addEventListener('pause', () => {
+            isPlaying = false;
+            playIcon.classList.remove('hidden');
+            pauseIcon.classList.add('hidden');
+            sendSyncState(getCurrentPlayerState());
+        });
+
+        audio.addEventListener('timeupdate', () => {
+            if (mediaType === 'AUDIO' && audioLoaded && !isSeeking) {
+                seekBar.value = audio.currentTime;
+                currentTimeEl.textContent = formatTime(audio.currentTime);
+            }
+        });
+        
+        seekBar.addEventListener('change', () => {
+            if (mediaType === 'AUDIO') {
+                audio.currentTime = seekBar.value;
+                sendSyncState(getCurrentPlayerState()); // Sync seek event
+            }
+            isSeeking = false;
+        });
+        
+        seekBar.addEventListener('mousedown', () => { isSeeking = true; });
+        seekBar.addEventListener('touchstart', () => { isSeeking = true; });
+        
+        seekBar.addEventListener('mouseup', () => { isSeeking = false; });
+        seekBar.addEventListener('touchend', () => { isSeeking = false; });
+
+        window.downloadCurrentTrack = function() {
+            if (!currentTrackInfo || !currentTrackInfo.url || currentTrackInfo.url.startsWith('blob:')) {
+                displayMessage("Cannot download. Only external HTTP/HTTPS links can be downloaded.", true);
+                return;
+            }
+
+            // Simple direct download approach for external URLs
+            const a = document.createElement('a');
+            a.href = currentTrackInfo.url;
+            // Attempt to use track title as file name
+            a.download = `${currentTrackInfo.title}-${currentTrackInfo.artist || 'Unknown'}.mp3`.replace(/[^a-z0-9\-\.]/gi, '_');
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            displayMessage(`Initiating download for "${currentTrackInfo.title}"...`, false);
+        }
+
+        // --- Auth & Firebase Logic ---
+        
+        // Use a wrapper function for logout that ignores clicks due to WIP status
+        // The button itself is disabled in the HTML, but keeping the function definition for completeness
+        window.logoutUser = async function() {
+            // This function is effectively disabled via the 'disabled' attribute on the button,
+            // but the logic remains the same for when WIP is removed.
+            // if (logoutBtnWip.hasAttribute('disabled')) { return; } // Guard clause (already handled by HTML)
+            try { await signOut(auth); displayMessage("Logged out successfully.", false);
+            } catch (error) { console.error("Logout Failed:", error); displayMessage("Logout failed.", true); }
+        }
+
+        window.onload = function () {
+            // Firebase Initialization
+            try {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                
+                if (!firebaseConfig || !firebaseConfig.apiKey) throw new Error("Firebase config missing.");
+                
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                authStatusEl.textContent = "Authenticating...";
+                
+                const initialSignIn = async () => {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken).catch(e => signInAnonymously(auth));
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                }
+                
+                initialSignIn();
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        isPermanentUser = user.email !== null;
+                        let userEmail = user.email || (user.isAnonymous ? `Anonymous User (${user.uid.substring(0, 8)}...)` : 'Guest');
+                        authStatusEl.textContent = isPermanentUser ? "Status: Permanent Account" : "Status: Guest Session";
+                        userEmailDisplay.textContent = userEmail;
+                        authFormContainer.classList.toggle('hidden', true);
+                        loggedInControls.classList.toggle('hidden', false);
+                        addPlaylistBtn.disabled = !isPermanentUser;
+                        
+                        // Set the actual logout function (only for permanent users if not WIP)
+                        if (!logoutBtnWip.hasAttribute('disabled')) { 
+                            logoutBtnWip.onclick = logoutUser;
+                        } else {
+                            // If WIP, keep it non-functional but display the status
+                            logoutBtnWip.onclick = () => displayMessage("Logout feature is currently Work In Progress (WIP).", true);
+                        }
+                        
+                        startPlaylistListener();
+                    } else {
+                        userId = crypto.randomUUID();
+                        isPermanentUser = false;
+                        authStatusEl.textContent = "Status: Not Signed In. Log in or Register.";
+                        loggedInControls.classList.toggle('hidden', true);
+                        authFormContainer.classList.toggle('hidden', false);
+                        addPlaylistBtn.disabled = true;
+                        playlistData = [];
+                        renderPlaylist();
+                    }
+                });
+                
+            } catch (error) {
+                console.error("Firebase Initialization Error:", error);
+                authStatusEl.textContent = "Status: Local (No Persistence)";
+            }
+
+            // PeerJS Initialization
+            initializePeer();
+            
+            // Volume setup
+            audio.volume = volumeSlider.value / 100;
+        }
+
+        // Remaining Firebase and App logic (simplified for brevity, assumes all necessary parts are here)
+        
+        function getPlaylistCollectionRef() { 
+             if (!db || !userId || userId === 'default-user') throw new Error("Database not initialized or user not authenticated.");
+             const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+             return collection(db, `artifacts/${appId}/users/${userId}/misumuse_playlists`);
+        }
+
+        function startPlaylistListener() {
+             try {
+                const playlistQuery = query(getPlaylistCollectionRef());
+                onSnapshot(playlistQuery, (snapshot) => {
+                    playlistData = snapshot.docs.map((doc, index) => ({ id: doc.id, index: index, ...doc.data() }));
+                    renderPlaylist();
+                }, (error) => { console.error("Playlist Snapshot Error:", error); });
+            } catch (e) { console.error("Error setting up playlist listener:", e); }
+        }
+        
+        window.addCurrentToPlaylist = async function() {
+             if (!isPermanentUser) { displayMessage("Please log in to save tracks.", true); return; }
+             if (!currentTrackInfo || !currentTrackInfo.url.startsWith('http')) { displayMessage("Load a valid external URL track first.", true); return; }
+             try { await addDoc(getPlaylistCollectionRef(), {title: currentTrackInfo.title, artist: currentTrackInfo.artist || 'Unknown', url: currentTrackInfo.url});
+                 displayMessage(`Saved "${currentTrackInfo.title}"!`, false);
+                 urlInput.value = ''; artistInput.value = ''; addPlaylistBtn.disabled = true;
+             } catch (e) { console.error("Error adding document:", e); displayMessage("Failed to save track.", true); }
+        }
+        
+        window.deleteTrack = async function(docId) {
+             if (!db || !isPermanentUser) { displayMessage("Login required to delete tracks.", true); return; }
+             try { await deleteDoc(doc(getPlaylistCollectionRef(), docId)); displayMessage("Track deleted.", false);
+             } catch (e) { console.error("Error deleting document:", e); displayMessage("Failed to delete track.", true); }
+        }
+
+        function renderPlaylist() {
+             playlistUl.innerHTML = '';
+             if (playlistData.length === 0) { playlistUl.innerHTML = '<li class="p-3 bg-gray-700 rounded text-sm text-gray-400">Your playlist is empty.</li>'; return; }
+             playlistData.forEach((track, index) => {
+                 const isCurrent = currentPlaylistIndex === index;
+                 const li = document.createElement('li');
+                 li.className = `track-item flex items-center justify-between p-3 rounded-lg cursor-pointer transition relative ${isCurrent ? 'bg-cyan-900 ring-2 ring-cyan-500' : 'bg-gray-800'}`;
+                 li.onclick = () => loadAndPlayTrack(track, index);
+                 li.innerHTML = `<div class="truncate pr-4 flex items-center"><span class="text-xs text-gray-400 mr-2 flex-shrink-0">${index + 1}.</span><div class="flex flex-col min-w-0"><span class="font-semibold text-white truncate block">${track.title}</span><span class="text-xs text-gray-400 truncate block">${track.artist || 'N/A'}</span></div></div><button onclick="event.stopPropagation(); deleteTrack('${track.id}')" class="p-1 rounded-full text-red-400 hover:text-red-300 hover:bg-gray-700 flex-shrink-0"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3m1.5 5.5l-2-2"></path></svg></button>`;
+                 playlistUl.appendChild(li);
+             });
+        }
+        
+        window.exportPlaylist = function() {
+            if (playlistData.length === 0) { displayMessage("Playlist is empty.", true); return; }
+            const exportableData = playlistData.map(track => ({ title: track.title, artist: track.artist, url: track.url }));
+            const jsonString = JSON.stringify(exportableData, null, 2);
+            const blob = new Blob([jsonString], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = `misumuse_playlist_metadata_${new Date().toISOString().substring(0, 10)}.misu`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+            displayMessage(`Exported ${playlistData.length} track links.`, false);
+        }
+
+        window.loginUser = async function() {
+             const email = authEmailInput.value.trim(); const password = authPasswordInput.value.trim();
+             if (!email || !password) { displayMessage("Please enter both email and password.", true); return; }
+             try { await signInWithEmailAndPassword(auth, email, password); displayMessage("Login successful!", false); authEmailInput.value = ''; authPasswordInput.value = '';
+             } catch (error) { console.error("Login Failed:", error); displayMessage(`Login failed: ${error.message.replace('Firebase: Error (auth/', '').replace(').', '')}`, true); }
+        }
+
+        window.registerUser = async function() {
+             const email = authEmailInput.value.trim(); const password = authPasswordInput.value.trim();
+             if (!email || !password || password.length < 6) { displayMessage("Enter valid email and password (min 6 chars).", true); return; }
+             try { await createUserWithEmailAndPassword(auth, email, password); displayMessage("Registration successful! You are now logged in.", false); authEmailInput.value = ''; authPasswordInput.value = '';
+             } catch (error) { console.error("Registration Failed:", error); displayMessage(`Registration failed: ${error.message.replace('Firebase: Error (auth/', '').replace(').', '')}`, true); }
+        }
+
+
+        window.toggleAuthFormMode = function() {
+            isRegisterMode = !isRegisterMode;
+            if (isRegisterMode) { authFormTitle.textContent = "Register New Account"; authFormToggle.textContent = "Already have an account? Switch to Login"; } 
+            else { authFormTitle.textContent = "Login"; authFormToggle.textContent = "Need an account? Switch to Register"; }
+        }
+        
+        window.copyPeerId = function() {
+            const id = myPeerIdEl.textContent;
+            if (id && id !== 'N/A') {
+                const tempInput = document.createElement('textarea');
+                tempInput.value = id;
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempInput);
+                displayMessage("Peer ID copied to clipboard!", false);
+            }
+        }
+        
+        window.skip = function(seconds) {
+             if (!currentTrackInfo) return;
+
+            if (mediaType === 'YOUTUBE' && youtubePlayer && typeof youtubePlayer.seekTo === 'function') {
+                const newTime = youtubePlayer.getCurrentTime() + seconds;
+                youtubePlayer.seekTo(newTime, true);
+            } else if (mediaType === 'AUDIO' && audioLoaded) {
+                audio.currentTime = Math.max(0, audio.currentTime + seconds);
+            }
+            sendSyncState(getCurrentPlayerState()); 
+        }
+
+        window.skipTrack = function(direction) {
+             if (playlistData.length === 0) { displayMessage("Playlist is empty.", true); return; }
+            let nextIndex = currentPlaylistIndex + direction;
+            if (nextIndex < 0) { nextIndex = playlistData.length - 1; } 
+            else if (nextIndex >= playlistData.length) { nextIndex = 0; }
+            const nextTrack = playlistData[nextIndex];
+            if (nextTrack) {
+                loadAndPlayTrack(nextTrack, nextIndex);
+                sendSyncState(getCurrentPlayerState(), true); // Send track change sync
+            } else { displayMessage("Cannot skip.", true); }
+        }
+        
+        window.loadFromURL = function() {
+            const url = urlInput.value.trim();
+            const artist = artistInput.value.trim();
+            const videoId = getYouTubeVideoId(url);
+            let title = url.split('/').pop() || "Online Track";
+            if (videoId) { title = `YouTube Video (${videoId})`; }
+
+            if (url) {
+                const track = { title: title, artist: artist, url: url };
+                loadAndPlayTrack(track, -1);
+                
+                const canSave = isPermanentUser && url.startsWith('http');
+                addPlaylistBtn.disabled = !canSave;
+                downloadBtn.disabled = !url.startsWith('http');
+                sendSyncState(getCurrentPlayerState(), true); // Send track change sync
+            } else { displayMessage("Please enter a valid URL.", true); }
+        }
+
+
+        importFileInput.addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const importedTracks = JSON.parse(e.target.result);
+                    if (!Array.isArray(importedTracks) || !isPermanentUser) throw new Error("Invalid file or not logged in.");
+                    const collectionRef = getPlaylistCollectionRef();
+                    let importedCount = 0;
+                    for (const track of importedTracks) {
+                        if (!playlistData.some(existing => existing.url === track.url)) {
+                            await addDoc(collectionRef, {title: track.title, artist: track.artist || 'N/A', url: track.url});
+                            importedCount++;
+                        }
+                    }
+                    displayMessage(`Imported ${importedCount} new tracks.`, false);
+                } catch (error) {
+                    console.error("Import Error:", error);
+                    displayMessage(`Failed to import playlist: ${error.message}`, true);
+                } finally {
+                    importFileInput.value = ''; 
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { sendMessage(); } });
+        fileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const tempUrl = URL.createObjectURL(file);
+                const track = { title: file.name, artist: "Local File", url: tempUrl };
+                loadAndPlayTrack(track, -1);
+                addPlaylistBtn.disabled = true; 
+                downloadBtn.disabled = true; 
+            }
+        });
+        
+    </script>
+</body>
+</html>
+
